@@ -1,0 +1,25 @@
+{
+  "name": "retention-mongodb",
+  "types": ["module"],
+  "version": "1.4",
+  "homepage": "http://github.com/shinken-monitoring/mod-retention-mongodb",
+  "author": "Jean Gabès",
+  "description": "Module for loading/saving retention data from a mongodb cluster",
+  "contributors": [
+    {
+      "name": "Jean Gabès",
+      "email": "naparuba@gmail.com"
+    }
+  ],
+  "repository": "https://github.com/shinken-monitoring/mod-retention-mongodb",
+  "keywords": [
+    "module",
+    "scheduler",
+    "retention",
+    "nagios"
+  ],
+  "dependencies": {
+    "shinken": ">=1.4"
+  },
+  "license": "AGPL"
+}
