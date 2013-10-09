@@ -88,11 +88,11 @@ class Mongodb_retention_scheduler(BaseModule):
         logger.debug("Initialization of the mongodb  module")
 
         if self.replica_set:
-            self.con = ReplicaSetConnection(self.uri, replicaSet=self.replica_set, fsync=True)
+            self.con = ReplicaSetConnection(self.uri, replicaSet=self.replica_set, fsync=False)
         else:
             # Old versions of pymongo do not known about fsync
             if ReplicaSetConnection:
-                self.con = Connection(self.uri, fsync=True)
+                self.con = Connection(self.uri, fsync=False)
             else:
                 self.con = Connection(self.uri)
 
