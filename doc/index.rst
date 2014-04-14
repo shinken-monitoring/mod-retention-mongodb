@@ -55,9 +55,9 @@ Step 2: define a mongodb_retention module in your shinken-specific.cfg file:
 ::
 
   define module {
-    module_name MongodbRetention
+    module_name retention-mongodb
     module_type mongodb_retention
-    uri mongodb://localhost/?safe=true
+    uri mongodb://localhost/?safe=false
     database shinken
   }
   
@@ -75,7 +75,7 @@ Example:
        port     7768                  ; tcp port of the daemon
   
        #optionnal: modules for things as retention
-       modules    MongodbRetention
+       modules    retention-mongodb
        }
   
 Step 4: Restart the Arbiter, and your Scheduler will now save its state between restarts. :)
