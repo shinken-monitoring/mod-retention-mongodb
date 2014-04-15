@@ -26,12 +26,15 @@
 This is a scheduler module to save host/service retention data into a mongodb database
 """
 
+import time
 import cPickle
+
+import base64
+from multiprocessing import Process, cpu_count
+
 
 try:
     from pymongo.connection import Connection
-    import gridfs
-    from gridfs import GridFS
 except ImportError:
     Connection = None
 
@@ -58,12 +61,19 @@ def get_instance(plugin):
     """
     logger.debug("Get a Mongodb retention scheduler module for plugin %s" % plugin.get_name())
     if not Connection:
-        raise Exception('Cannot find the module python-pymongo or python-gridfs. Please install both.')
+        raise Exception('Cannot find the module python-pymongo. Please install both.')
     uri = plugin.uri
     database = plugin.database
     replica_set = getattr(plugin, 'replica_set', '')
     instance = Mongodb_retention_scheduler(plugin, uri, database, replica_set)
     return instance
+
+
+def chunks(l, n):
+    """ Yield successive n-sized chunks from l.
+    """
+    for i in xrange(0, len(l), n):
+        yield l[i:i+n]
 
 
 class Mongodb_retention_scheduler(BaseModule):
@@ -72,6 +82,7 @@ class Mongodb_retention_scheduler(BaseModule):
         self.uri = uri
         self.database = database
         self.replica_set = replica_set
+        self.max_workers = 4
         if self.replica_set and not ReplicaSetConnection:
             logger.error('[MongodbRetention] Can not initialize module with '
                          'replica_set because your pymongo lib is too old. '
@@ -99,47 +110,99 @@ class Mongodb_retention_scheduler(BaseModule):
         #self.con = Connection(self.uri)
         # Open a gridfs connection
         self.db = getattr(self.con, self.database)
-        self.hosts_fs = GridFS(self.db, collection='retention_hosts')
-        self.services_fs = GridFS(self.db, collection='retention_services')
+        self.hosts_fs = getattr(self.db, 'retention_hosts_raw') #GridFS(self.db, collection='retention_hosts')
+        self.services_fs = getattr(self.db, 'retention_services_raw')
+
+
+    def job(self, all_data, wid, offset):
+        t0 = time.time()
+        # Reinit the mongodb connexion if need
+        self.init()
+        all_objs = {'hosts':{}, 'services':{}}
+
+        hosts = all_data['hosts']
+        services = all_data['services']
+        
+        # Prepare the encoding for all managed hosts
+        i = -1
+        for h_name in hosts:
+            # Only manage the worker id element of the offset (number of workers)
+            # elements
+            i += 1
+            if (i % offset) != wid:
+                continue
+            h = hosts[h_name]
+            key = "HOST-%s" % h_name
+            val = cPickle.dumps(h, protocol=cPickle.HIGHEST_PROTOCOL)
+            val2 = base64.b64encode(val)            
+            # We save it in the Gridfs for hosts
+            all_objs['hosts'][key] = {'_id':key, 'value':val2}
+
+        i = -1
+        for (h_name, s_desc) in services:
+            i += 1
+            # Only manage the worker id element of the offset (number of workers)
+            # elements
+            if (i % offset) != wid:
+                continue
+            s = services[(h_name, s_desc)]
+            key = "SERVICE-%s,%s" % (h_name, s_desc)
+            # space are not allowed in a key.. so change it by SPACE token
+            key = key.replace(' ', 'SPACE')
+            val = cPickle.dumps(s, protocol=cPickle.HIGHEST_PROTOCOL)
+            val2 = base64.b64encode(val)
+            all_objs['services'][key] = {'_id':key, 'value':val2}
+        
+        if len(all_objs['hosts']) != 0:
+            t2 = time.time()
+            self.hosts_fs.remove({ '_id': { '$in': all_objs['hosts'].keys()}}, w=0, j=False, fsync=False)
+            
+            # Do bulk insert of 100 elements (~100K insert)
+            lsts = list(chunks(all_objs['hosts'].values(), 100))
+            for lst in lsts:
+                fd = self.hosts_fs.insert(lst, w=0, j=False, fsync=False)
+
+        if len(all_objs['services']) != 0:
+            t2 = time.time()
+            self.services_fs.remove({ '_id': { '$in': all_objs['services'].keys()}}, w=0, j=False, fsync=False)
+            # Do bulk insert of 100 elements (~100K insert)
+            lsts = list(chunks(all_objs['services'].values(), 100))
+            for lst in lsts:
+                fd = self.services_fs.insert(lst, w=0, j=False, fsync=False)        
+
+        # Return and so quit this sub-process
+        return
 
 
     def hook_save_retention(self, daemon):
         """
         main function that is called in the retention creation pass
         """
+
+        try:
+            self.max_workers = cpu_count()
+        except NotImplementedError:
+            pass
+        
+        t0 = time.time()
         logger.debug("[MongodbRetention] asking me to update the retention objects")
 
         all_data = daemon.get_retention_data()
 
-        hosts = all_data['hosts']
-        services = all_data['services']
+        t3 = time.time()
+        processes = []
+        for i in xrange(self.max_workers):
+            proc = Process(target=self.job, args=(all_data, i, self.max_workers))
+            proc.start()
+            processes.append(proc)
 
-        # Now the flat file method
-        for h_name in hosts:
-            h = hosts[h_name]
-            key = "HOST-%s" % h_name
-            val = cPickle.dumps(h, protocol=cPickle.HIGHEST_PROTOCOL)
-            # First delete if a previous one is here, because gridfs is a versionned
-            # fs, so we only want the last version...
-            self.hosts_fs.delete(key)
-            # We save it in the Gridfs for hosts
-            fd = self.hosts_fs.put(val, _id=key, filename=key)
+        # Allow 30s to join the sub-processes, should be enough
+        for proc in processes:
+            proc.join(30)
 
-        for (h_name, s_desc) in services:
-            s = services[(h_name, s_desc)]
-            key = "SERVICE-%s,%s" % (h_name, s_desc)
-            # space are not allowed in a key.. so change it by SPACE token
-            key = key.replace(' ', 'SPACE')
-            val = cPickle.dumps(s, protocol=cPickle.HIGHEST_PROTOCOL)
+        logger.info("Retention information updated in Mongodb (%.2fs)" % (time.time() - t0))
 
-            # We save the binary dumps in a gridfs system
-            # First delete if a previous one is here, because gridfs is a versionned
-            # fs, so we only want the last version...
-            self.services_fs.delete(key)
-            fd = self.services_fs.put(val, _id=key, filename=key)
-
-        logger.info("Retention information updated in Mongodb")
-
+    
     # Should return if it succeed in the retention load or not
     def hook_load_retention(self, daemon):
 
@@ -153,14 +216,12 @@ class Mongodb_retention_scheduler(BaseModule):
         # We must load the data and format as the scheduler want :)
         for h in daemon.hosts:
             key = "HOST-%s" % h.host_name
-            try:
-                fd = self.hosts_fs.get_last_version(key)
-            except gridfs.errors.NoFile, exp:
-                # Go in the next host object
-                continue
-            val = fd.read()
-
+            e = self.hosts_fs.find_one({'_id':key})
+            val = None
+            if e:
+                val = e.get('value', None)
             if val is not None:
+                val = base64.b64decode(val)
                 val = cPickle.loads(val)
                 ret_hosts[h.host_name] = val
 
@@ -168,14 +229,13 @@ class Mongodb_retention_scheduler(BaseModule):
             key = "SERVICE-%s,%s" % (s.host.host_name, s.service_description)
             # space are not allowed in memcache key.. so change it by SPACE token
             key = key.replace(' ', 'SPACE')
-            try:
-                fd = self.services_fs.get_last_version(key)
-            except gridfs.errors.NoFile, exp:
-                # Go in the next host object
-                continue
-            val = fd.read()
 
+            val = None
+            e = self.services_fs.find_one({'_id':key})
+            if e:
+                val = e.get('value', None)
             if val is not None:
+                val = base64.b64decode(val)
                 val = cPickle.loads(val)
                 ret_services[(s.host.host_name, s.service_description)] = val
 
