@@ -28,6 +28,7 @@ This is a scheduler module to save host/service retention data into a mongodb da
 
 import time
 import cPickle
+import datetime
 
 import base64
 from multiprocessing import Process, cpu_count
@@ -119,6 +120,7 @@ class Mongodb_retention_scheduler(BaseModule):
         # Reinit the mongodb connexion if need
         self.init()
         all_objs = {'hosts':{}, 'services':{}}
+        date = datetime.datetime.utcnow()
 
         hosts = all_data['hosts']
         services = all_data['services']
@@ -136,7 +138,7 @@ class Mongodb_retention_scheduler(BaseModule):
             val = cPickle.dumps(h, protocol=cPickle.HIGHEST_PROTOCOL)
             val2 = base64.b64encode(val)            
             # We save it in the Gridfs for hosts
-            all_objs['hosts'][key] = {'_id':key, 'value':val2}
+            all_objs['hosts'][key] = {'_id':key, 'value':val2, 'date':date}
 
         i = -1
         for (h_name, s_desc) in services:
@@ -151,7 +153,7 @@ class Mongodb_retention_scheduler(BaseModule):
             key = key.replace(' ', 'SPACE')
             val = cPickle.dumps(s, protocol=cPickle.HIGHEST_PROTOCOL)
             val2 = base64.b64encode(val)
-            all_objs['services'][key] = {'_id':key, 'value':val2}
+            all_objs['services'][key] = {'_id':key, 'value':val2, 'date':date}
         
         if len(all_objs['hosts']) != 0:
             t2 = time.time()
