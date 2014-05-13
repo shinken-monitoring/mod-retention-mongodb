@@ -215,14 +215,23 @@ class Mongodb_retention_scheduler(BaseModule):
         ret_hosts = {}
         ret_services = {}
 
-        # We must load the data and format as the scheduler want :)
+        found_hosts = {}
+        found_services = {}
+
+        for h in self.hosts_fs.find():
+            val = h.get('value', None)
+            if val is not None:
+                found_hosts[h.get('_id')] = val
+
+        for s in self.services_fs.find():
+            val = s.get('value', None)
+            if val is not None:
+                found_services[s.get('_id')] = val
+
         for h in daemon.hosts:
             key = "HOST-%s" % h.host_name
-            e = self.hosts_fs.find_one({'_id':key})
-            val = None
-            if e:
-                val = e.get('value', None)
-            if val is not None:
+            if key in found_hosts:
+                val = found_hosts[key]
                 val = base64.b64decode(val)
                 val = cPickle.loads(val)
                 ret_hosts[h.host_name] = val
@@ -231,16 +240,12 @@ class Mongodb_retention_scheduler(BaseModule):
             key = "SERVICE-%s,%s" % (s.host.host_name, s.service_description)
             # space are not allowed in memcache key.. so change it by SPACE token
             key = key.replace(' ', 'SPACE')
-
-            val = None
-            e = self.services_fs.find_one({'_id':key})
-            if e:
-                val = e.get('value', None)
-            if val is not None:
+            if key in found_services:
+                val = found_services[key]
                 val = base64.b64decode(val)
                 val = cPickle.loads(val)
                 ret_services[(s.host.host_name, s.service_description)] = val
-
+        
         all_data = {'hosts': ret_hosts, 'services': ret_services}
 
         # Ok, now comme load them scheduler :)
