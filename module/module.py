@@ -41,6 +41,7 @@ except ImportError:
 
 try:
     from pymongo import ReplicaSetConnection, ReadPreference
+    from pymongo.bulk import BulkUpsertOperation
 except ImportError:
     ReplicaSetConnection = None
     ReadPreference = None
@@ -156,21 +157,22 @@ class Mongodb_retention_scheduler(BaseModule):
             all_objs['services'][key] = {'_id':key, 'value':val2, 'date':date}
         
         if len(all_objs['hosts']) != 0:
-            t2 = time.time()
-            self.hosts_fs.remove({ '_id': { '$in': all_objs['hosts'].keys()}}, w=0, j=False, fsync=False)
-            
-            # Do bulk insert of 100 elements (~100K insert)
-            lsts = list(chunks(all_objs['hosts'].values(), 100))
+            # Do bulk insert of 500 elements (~500K insert)
+            lsts = list(chunks(all_objs['hosts'].values(), 500))
             for lst in lsts:
-                fd = self.hosts_fs.insert(lst, w=0, j=False, fsync=False)
+                bulk=self.hosts_fs.initialize_unordered_bulk_op()
+                for doc in lst:
+                    bulk.find({'_id': doc['_id']}).upsert().replace_one(doc)
+                res = bulk.execute({'w': 0})
 
         if len(all_objs['services']) != 0:
-            t2 = time.time()
-            self.services_fs.remove({ '_id': { '$in': all_objs['services'].keys()}}, w=0, j=False, fsync=False)
-            # Do bulk insert of 100 elements (~100K insert)
-            lsts = list(chunks(all_objs['services'].values(), 100))
+            # Do bulk insert of 500 elements (~500K insert)
+            lsts = list(chunks(all_objs['services'].values(), 500))
             for lst in lsts:
-                fd = self.services_fs.insert(lst, w=0, j=False, fsync=False)        
+                bulk = self.services_fs.initialize_unordered_bulk_op()
+                for doc in lst:
+                    bulk.find({'_id': doc['_id']}).upsert().replace_one(doc)
+                res = bulk.execute({'w': 0})
 
         # Return and so quit this sub-process
         return
