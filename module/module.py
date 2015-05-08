@@ -75,9 +75,9 @@ class Mongodb_retention_scheduler(BaseModule):
         self.database = database
         self.replica_set = replica_set
         self.max_workers = 4
-        if self.replica_set and version < 2:
-            logger.error('[MongodbRetention] Can not initialize module with '
-                         'replica_set because your pymongo lib is too old. '
+        # Older versions don't handle replicasets and don't have the fsync option
+        if version < 2:
+            logger.error('[MongodbRetention] Your pymongo lib is too old. '
                          'Please install at least a 2.x+ version.')
             return None
 
