@@ -33,18 +33,10 @@ import datetime
 import base64
 from multiprocessing import Process, cpu_count
 
-
 try:
-    from pymongo.connection import Connection
+    from pymongo import MongoClient,version
 except ImportError:
-    Connection = None
-
-try:
-    from pymongo import ReplicaSetConnection, ReadPreference
-except ImportError:
-    ReplicaSetConnection = None
-    ReadPreference = None
-
+    MongoClient = None
 
 from shinken.basemodule import BaseModule
 from shinken.log import logger
@@ -55,14 +47,13 @@ properties = {
     'external': False,
     }
 
-
 def get_instance(plugin):
     """
     Called by the plugin manager to get a broker
     """
     logger.debug("Get a Mongodb retention scheduler module for plugin %s" % plugin.get_name())
-    if not Connection:
-        raise Exception('Cannot find the module python-pymongo. Please install both.')
+    if not MongoClient:
+        raise Exception('Could not use the pymongo module. Please verify your pymongo install.')
     uri = plugin.uri
     database = plugin.database
     replica_set = getattr(plugin, 'replica_set', '')
@@ -84,29 +75,23 @@ class Mongodb_retention_scheduler(BaseModule):
         self.database = database
         self.replica_set = replica_set
         self.max_workers = 4
-        if self.replica_set and not ReplicaSetConnection:
-            logger.error('[MongodbRetention] Can not initialize module with '
-                         'replica_set because your pymongo lib is too old. '
-                         'Please install it with a 2.x+ version from '
-                         'https://github.com/mongodb/mongo-python-driver/downloads')
+        # Older versions don't handle replicasets and don't have the fsync option
+        if version < 2:
+            logger.error('[MongodbRetention] Your pymongo lib is too old. '
+                         'Please install at least a 2.x+ version.')
             return None
-
 
 
     def init(self):
         """
         Called by Scheduler to say 'let's prepare yourself guy'
         """
-        logger.debug("Initialization of the mongodb  module")
+        logger.debug("Initialization of the mongodb module")
 
         if self.replica_set:
-            self.con = ReplicaSetConnection(self.uri, replicaSet=self.replica_set, fsync=False)
+            self.con = MongoClient(self.uri, replicaSet=self.replica_set, fsync=False)
         else:
-            # Old versions of pymongo do not known about fsync
-            if ReplicaSetConnection:
-                self.con = Connection(self.uri, fsync=False)
-            else:
-                self.con = Connection(self.uri)
+            self.con = MongoClient(self.uri, fsync=False)
 
         #self.con = Connection(self.uri)
         # Open a gridfs connection
@@ -117,7 +102,7 @@ class Mongodb_retention_scheduler(BaseModule):
 
     def job(self, all_data, wid, offset):
         t0 = time.time()
-        # Reinit the mongodb connexion if need
+        # Reinit the mongodb connection if need
         self.init()
         all_objs = {'hosts':{}, 'services':{}}
         date = datetime.datetime.utcnow()
