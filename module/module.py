@@ -99,8 +99,16 @@ class Mongodb_retention_scheduler(BaseModule):
         self.hosts_fs = getattr(self.db, 'retention_hosts_raw') #GridFS(self.db, collection='retention_hosts')
         self.services_fs = getattr(self.db, 'retention_services_raw')
 
-
     def job(self, all_data, wid, offset):
+        try:
+            self._job(all_data, wid, offset)
+        except Exception, exc:
+            logger.error('Retention worker %d/%d failed' % (wid, offset), exc)
+        finally:
+            # I'm a subprocess and need to close my forked socket
+            self.con.close()
+
+    def _job(self, all_data, wid, offset):
         t0 = time.time()
         # Reinit the mongodb connection if need
         self.init()
