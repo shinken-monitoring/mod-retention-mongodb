@@ -109,7 +109,7 @@ class Mongodb_retention_scheduler(BaseModule):
 
         hosts = all_data['hosts']
         services = all_data['services']
-        
+
         # Prepare the encoding for all managed hosts
         i = -1
         for h_name in hosts:
@@ -121,7 +121,7 @@ class Mongodb_retention_scheduler(BaseModule):
             h = hosts[h_name]
             key = "HOST-%s" % h_name
             val = cPickle.dumps(h, protocol=cPickle.HIGHEST_PROTOCOL)
-            val2 = base64.b64encode(val)            
+            val2 = base64.b64encode(val)
             # We save it in the Gridfs for hosts
             all_objs['hosts'][key] = {'_id':key, 'value':val2, 'date':date}
 
@@ -139,23 +139,24 @@ class Mongodb_retention_scheduler(BaseModule):
             val = cPickle.dumps(s, protocol=cPickle.HIGHEST_PROTOCOL)
             val2 = base64.b64encode(val)
             all_objs['services'][key] = {'_id':key, 'value':val2, 'date':date}
-        
+
         if len(all_objs['hosts']) != 0:
-            t2 = time.time()
-            self.hosts_fs.remove({ '_id': { '$in': all_objs['hosts'].keys()}}, w=0, j=False, fsync=False)
-            
-            # Do bulk insert of 100 elements (~100K insert)
-            lsts = list(chunks(all_objs['hosts'].values(), 100))
+            # Do bulk insert of 500 elements (~500K insert)
+            lsts = list(chunks(all_objs['hosts'].values(), 500))
             for lst in lsts:
-                fd = self.hosts_fs.insert(lst, w=0, j=False, fsync=False)
+                bulk=self.hosts_fs.initialize_unordered_bulk_op()
+                for doc in lst:
+                    bulk.find({'_id': doc['_id']}).upsert().replace_one(doc)
+                res = bulk.execute({'w': 0})
 
         if len(all_objs['services']) != 0:
-            t2 = time.time()
-            self.services_fs.remove({ '_id': { '$in': all_objs['services'].keys()}}, w=0, j=False, fsync=False)
-            # Do bulk insert of 100 elements (~100K insert)
-            lsts = list(chunks(all_objs['services'].values(), 100))
+            # Do bulk insert of 500 elements (~500K insert)
+            lsts = list(chunks(all_objs['services'].values(), 500))
             for lst in lsts:
-                fd = self.services_fs.insert(lst, w=0, j=False, fsync=False)        
+                bulk = self.services_fs.initialize_unordered_bulk_op()
+                for doc in lst:
+                    bulk.find({'_id': doc['_id']}).upsert().replace_one(doc)
+                res = bulk.execute({'w': 0})
 
         # Return and so quit this sub-process
         return
@@ -170,13 +171,12 @@ class Mongodb_retention_scheduler(BaseModule):
             self.max_workers = cpu_count()
         except NotImplementedError:
             pass
-        
+
         t0 = time.time()
         logger.debug("[MongodbRetention] asking me to update the retention objects")
 
         all_data = daemon.get_retention_data()
 
-        t3 = time.time()
         processes = []
         for i in xrange(self.max_workers):
             proc = Process(target=self.job, args=(all_data, i, self.max_workers))
@@ -189,7 +189,7 @@ class Mongodb_retention_scheduler(BaseModule):
 
         logger.info("Retention information updated in Mongodb (%.2fs)" % (time.time() - t0))
 
-    
+
     # Should return if it succeed in the retention load or not
     def hook_load_retention(self, daemon):
 
@@ -230,7 +230,7 @@ class Mongodb_retention_scheduler(BaseModule):
                 val = base64.b64decode(val)
                 val = cPickle.loads(val)
                 ret_services[(s.host.host_name, s.service_description)] = val
-        
+
         all_data = {'hosts': ret_hosts, 'services': ret_services}
 
         # Ok, now comme load them scheduler :)
