@@ -103,7 +103,7 @@ class Mongodb_retention_scheduler(BaseModule):
         try:
             self._job(all_data, wid, offset)
         except Exception, exc:
-            logger.error('Retention worker %d/%d failed' % (wid, offset), exc)
+            logger.error(exc)
         finally:
             # I'm a subprocess and need to close my forked socket
             self.con.close()
