@@ -56,8 +56,10 @@ def get_instance(plugin):
         raise Exception('Could not use the pymongo module. Please verify your pymongo install.')
     uri = plugin.uri
     database = plugin.database
+    username = getattr(plugin, 'username', '')
+    password = getattr(plugin, 'password', '')
     replica_set = getattr(plugin, 'replica_set', '')
-    instance = Mongodb_retention_scheduler(plugin, uri, database, replica_set)
+    instance = Mongodb_retention_scheduler(plugin, uri, database, username, password, replica_set)
     return instance
 
 
@@ -69,10 +71,12 @@ def chunks(l, n):
 
 
 class Mongodb_retention_scheduler(BaseModule):
-    def __init__(self, modconf, uri, database, replica_set):
+    def __init__(self, modconf, uri, database, username, password, replica_set):
         BaseModule.__init__(self, modconf)
         self.uri = uri
         self.database = database
+        self.username = username
+        self.password = password
         self.replica_set = replica_set
         self.max_workers = 4
         # Older versions don't handle replicasets and don't have the fsync option
@@ -96,6 +100,8 @@ class Mongodb_retention_scheduler(BaseModule):
         #self.con = Connection(self.uri)
         # Open a gridfs connection
         self.db = getattr(self.con, self.database)
+        if self.username != '' and self.password != '':
+            self.db.authenticate(self.username, self.password)
         self.hosts_fs = getattr(self.db, 'retention_hosts_raw') #GridFS(self.db, collection='retention_hosts')
         self.services_fs = getattr(self.db, 'retention_services_raw')
 
