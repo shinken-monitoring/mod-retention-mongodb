@@ -30,6 +30,7 @@ We will use mongodb package from 10gen repository, so we start by adding it in a
 ::
 
   echo 'deb http://downloads-distro.mongodb.org/repo/debian-sysvinit dist 10gen' > /etc/apt/sources.list.d/10gen.list
+  apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 7F0CEB10
   apt-get update
   
 And we install it:
