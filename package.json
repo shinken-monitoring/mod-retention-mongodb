@@ -9,6 +9,10 @@
     {
       "name": "Jean Gabès",
       "email": "naparuba@gmail.com"
+    },
+    {
+      "name": "Guillaume Subiron",
+      "email": "maethor@subiron.org"
     }
   ],
   "repository": "https://github.com/shinken-monitoring/mod-retention-mongodb",
