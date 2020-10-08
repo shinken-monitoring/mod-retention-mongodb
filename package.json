@@ -1,7 +1,7 @@
 {
   "name": "retention-mongodb",
   "types": ["module"],
-  "version": "2.0.0",
+  "version": "2.0.1",
   "homepage": "http://github.com/shinken-monitoring/mod-retention-mongodb",
   "author": "Jean Gabès",
   "description": "Module for loading/saving retention data from a mongodb cluster",

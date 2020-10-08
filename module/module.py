@@ -188,7 +188,7 @@ class MongodbRetentionScheduler(BaseModule):
             return
 
         now = time.time()
-        logger.info('[Mongodb-Scheduler-Retention] start loading hosts and services retention…')
+        logger.info('[Mongodb-Scheduler-Retention] start loading hosts and services retention...')
         hosts = {}
         services = {}
         restored_hosts = {}
@@ -244,7 +244,7 @@ class MongodbRetentionScheduler(BaseModule):
         now = time.time()
         hosts = retention['hosts']
         services = retention['services']
-        logger.info('[Mongodb-Scheduler-Retention] start saving retention for %d hosts and %d services…', len(hosts), len(services))
+        logger.info('[Mongodb-Scheduler-Retention] start saving retention for %d hosts and %d services...', len(hosts), len(services))
         try:
             for host in hosts:
                 _id = '%s,hostcheck' % host
